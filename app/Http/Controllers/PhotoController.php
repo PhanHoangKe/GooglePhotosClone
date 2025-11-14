@@ -1,0 +1,137 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Photo;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Http\Request;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Storage;
+use Inertia\Inertia;
+use Inertia\Response;
+use Illuminate\Validation\ValidationException;
+
+class PhotoController extends Controller
+{
+    use AuthorizesRequests;
+
+    public function index(Request $request): Response
+    {
+        $perPage = 12; 
+
+        $search = $request->query('search');
+        $sortBy = $request->query('sort_by', 'created_at'); 
+        $sortDirection = $request->query('sort_direction', 'desc'); 
+
+        $photos = Photo::where('user_id', $request->user()->id)
+                        ->where('is_deleted', false);
+
+        if ($search) {
+            $photos->where('original_filename', 'like', '%' . $search . '%');
+        }
+
+        $dbSortBy = $sortBy === 'file_name' ? 'original_filename' : $sortBy;
+ 
+        if (in_array($dbSortBy, ['original_filename', 'file_size', 'created_at'])) {
+            $photos->orderBy($dbSortBy, $sortDirection);
+        } else {
+             $photos->orderBy('created_at', 'desc');
+        }
+
+        $paginatedPhotos = $photos->paginate($perPage);
+
+        $transformedPhotos = $paginatedPhotos->through(function ($photo) {
+            $filePath = route('storage.photo', ['filename' => $photo->filename]);
+            
+            return [
+                'id' => $photo->id,
+                'user_id' => $photo->user_id,
+                'file_name' => $photo->original_filename,
+                'file_path' => $filePath,
+                'path' => $filePath,
+                'size' => $photo->file_size,
+                'file_size' => $photo->file_size,
+                'file_type' => $photo->file_type,
+                'filename' => $photo->filename,
+                'original_filename' => $photo->original_filename,
+                'created_at' => $photo->created_at->toISOString(),
+            ];
+        });
+
+        return Inertia::render('Photos/Index', [
+            'photos' => $transformedPhotos,
+            'filters' => [
+                'search' => $search,
+                'sort_by' => $sortBy,
+                'sort_direction' => $sortDirection,
+            ],
+        ]);
+    }
+
+    public function store(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+
+        $request->validate([
+            'photo' => ['required', 'image', 'max:20480'],
+            'title' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $file = $request->file('photo');
+        $fileSize = $file->getSize();
+
+        $storageLimit = $user->storage_limit ?? (5 * 1024 * 1024 * 1024);
+        
+        if (($user->storage_used ?? 0) + $fileSize > $storageLimit) {
+             throw ValidationException::withMessages([
+                 'photo' => 'Không đủ dung lượng lưu trữ. Vui lòng nâng cấp tài khoản.',
+             ]);
+        }
+        
+        $storagePath = $file->store('photos', 'public');
+
+        $publicPath = '/storage/' . $storagePath;
+
+        $originalName = $file->getClientOriginalName();
+        $displayName = $request->filled('title')
+            ? $request->input('title')
+            : $originalName;
+
+        Photo::create([
+            'user_id' => $user->id,
+            'filename' => basename($storagePath), 
+            'original_filename' => $displayName,
+            'file_path' => $publicPath, 
+            'file_size' => $fileSize,
+            'mime_type' => $file->getMimeType(),
+            'file_type' => str_contains($file->getMimeType(), 'video') ? 'video' : (str_contains($file->getMimeType(), 'gif') ? 'gif' : 'image'),
+            'uploaded_at' => now(),
+        ]);
+
+        $user->increment('storage_used', $fileSize);
+
+        return back()->with('success', 'Ảnh đã được tải lên thành công.');
+    }
+
+    public function destroy(Request $request, string $id): RedirectResponse
+    {
+        $photo = Photo::findOrFail($id); 
+
+        if ($photo->user_id !== $request->user()->id) {
+            return back()->with('error', 'Bạn không có quyền xóa ảnh này.');
+        }
+
+        $fileSize = $photo->file_size;
+        $user = $request->user();
+
+        $fileName = basename($photo->file_path); 
+        $storagePathToDelete = 'photos/' . $fileName; 
+        Storage::disk('public')->delete($storagePathToDelete);
+
+        $photo->delete(); 
+
+        $user->decrement('storage_used', $fileSize);
+
+        return back()->with('success', 'Ảnh đã được xóa.');
+    }
+}
