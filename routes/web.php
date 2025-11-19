@@ -4,6 +4,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PhotoController;
 use App\Http\Controllers\AvatarController;
 use App\Http\Controllers\AlbumController;
+use App\Http\Controllers\TrashPhotoController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
@@ -70,6 +71,9 @@ Route::middleware('auth')->group(function () {
     Route::resource('photos', PhotoController::class)->only(['store', 'destroy']);
 
     Route::get('/photos', [PhotoController::class, 'index'])->name('photos.index');
+    Route::get('/photos/trash', [TrashPhotoController::class, 'index'])->name('photos.trash');
+    Route::patch('/photos/{photo}/restore', [TrashPhotoController::class, 'restore'])->name('photos.restore');
+    Route::delete('/photos/{photo}/force', [TrashPhotoController::class, 'forceDelete'])->name('photos.force-delete');
 
     Route::get('/albums', [AlbumController::class, 'index'])->name('albums.index');
     Route::post('/albums', [AlbumController::class, 'store'])->name('albums.store');

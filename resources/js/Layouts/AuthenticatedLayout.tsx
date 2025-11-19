@@ -13,7 +13,7 @@ import {
 import { Button } from '@/Components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/Components/ui/avatar';
 import UploadModal from '@/Components/Photo/UploadModal';
-import { Home, Image as ImageIcon, Layers, LogOut, Settings, Upload, User as UserIcon, UserCog } from 'lucide-react';
+import { Home, Image as ImageIcon, Layers, LogOut, Trash2, Upload, User as UserIcon, UserCog } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ApplicationLogo from '@/Components/ApplicationLogo';
 
@@ -49,6 +49,12 @@ export default function AuthenticatedLayout({ user, header, children }: Authenti
                 href: route('photos.index'),
                 icon: <ImageIcon className="h-4 w-4" />,
                 match: ['Photos/Index'],
+            },
+            {
+                label: 'Thùng rác',
+                href: route('photos.trash'),
+                icon: <Trash2 className="h-4 w-4" />,
+                match: ['Photos/Trash'],
             },
             {
                 label: 'Album',

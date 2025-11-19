@@ -132,23 +132,16 @@ class PhotoController extends Controller
 
     public function destroy(Request $request, string $id): RedirectResponse
     {
-        $photo = Photo::findOrFail($id); 
+        $photo = Photo::where('id', $id)
+            ->where('user_id', $request->user()->id)
+            ->where('is_deleted', false)
+            ->firstOrFail();
 
-        if ($photo->user_id !== $request->user()->id) {
-            return back()->with('error', 'Bạn không có quyền xóa ảnh này.');
-        }
+        $photo->update([
+            'is_deleted' => true,
+            'deleted_at' => now(),
+        ]);
 
-        $fileSize = $photo->file_size;
-        $user = $request->user();
-
-        $fileName = basename($photo->file_path); 
-        $storagePathToDelete = 'photos/' . $fileName; 
-        Storage::disk('public')->delete($storagePathToDelete);
-
-        $photo->delete(); 
-
-        $user->decrement('storage_used', $fileSize);
-
-        return back()->with('success', 'Ảnh đã được xóa.');
+        return back()->with('success', 'Ảnh đã được chuyển vào Thùng rác.');
     }
 }

@@ -23,6 +23,12 @@ class Photo extends Model
         'uploaded_at',
         'thumbnail_path',
         'is_deleted',
+        'deleted_at',
+    ];
+
+    protected $casts = [
+        'uploaded_at' => 'datetime',
+        'deleted_at' => 'datetime',
     ];
 
     public function getFilePathAttribute($value)
