@@ -72,45 +72,62 @@ class PhotoController extends Controller
     {
         $user = $request->user();
 
-        $request->validate([
-            'photo' => ['required', 'image', 'max:20480'],
-            'title' => ['nullable', 'string', 'max:255'],
+        $validated = $request->validate([
+            'photos' => ['required', 'array', 'min:1', 'max:20'],
+            'photos.*' => ['required', 'image', 'max:20480'],
+            'titles' => ['nullable', 'array'],
+            'titles.*' => ['nullable', 'string', 'max:255'],
         ]);
 
-        $file = $request->file('photo');
-        $fileSize = $file->getSize();
+        /** @var array<int, \Illuminate\Http\UploadedFile> $files */
+        $files = $request->file('photos', []);
 
         $storageLimit = $user->storage_limit ?? (5 * 1024 * 1024 * 1024);
-        
-        if (($user->storage_used ?? 0) + $fileSize > $storageLimit) {
-             throw ValidationException::withMessages([
-                 'photo' => 'Không đủ dung lượng lưu trữ. Vui lòng nâng cấp tài khoản.',
-             ]);
+        $currentUsage = $user->storage_used ?? 0;
+        $totalUploadSize = collect($files)->sum(fn ($file) => $file->getSize());
+
+        if ($currentUsage + $totalUploadSize > $storageLimit) {
+            throw ValidationException::withMessages([
+                'photos' => 'Không đủ dung lượng lưu trữ. Vui lòng nâng cấp tài khoản.',
+            ]);
         }
-        
-        $storagePath = $file->store('photos', 'public');
 
-        $publicPath = '/storage/' . $storagePath;
+        $titles = $validated['titles'] ?? [];
+        $uploadedCount = 0;
 
-        $originalName = $file->getClientOriginalName();
-        $displayName = $request->filled('title')
-            ? $request->input('title')
-            : $originalName;
+        foreach ($files as $index => $file) {
+            $storagePath = $file->store('photos', 'public');
+            $publicPath = '/storage/' . $storagePath;
+            $fileSize = $file->getSize();
+            $originalName = $file->getClientOriginalName();
 
-        Photo::create([
-            'user_id' => $user->id,
-            'filename' => basename($storagePath), 
-            'original_filename' => $displayName,
-            'file_path' => $publicPath, 
-            'file_size' => $fileSize,
-            'mime_type' => $file->getMimeType(),
-            'file_type' => str_contains($file->getMimeType(), 'video') ? 'video' : (str_contains($file->getMimeType(), 'gif') ? 'gif' : 'image'),
-            'uploaded_at' => now(),
-        ]);
+            $displayName = isset($titles[$index]) && filled($titles[$index])
+                ? $titles[$index]
+                : $originalName;
 
-        $user->increment('storage_used', $fileSize);
+            Photo::create([
+                'user_id' => $user->id,
+                'filename' => basename($storagePath),
+                'original_filename' => $displayName,
+                'file_path' => $publicPath,
+                'file_size' => $fileSize,
+                'mime_type' => $file->getMimeType(),
+                'file_type' => str_contains($file->getMimeType(), 'video') ? 'video' : (str_contains($file->getMimeType(), 'gif') ? 'gif' : 'image'),
+                'uploaded_at' => now(),
+            ]);
 
-        return back()->with('success', 'Ảnh đã được tải lên thành công.');
+            $uploadedCount++;
+        }
+
+        if ($totalUploadSize > 0) {
+            $user->increment('storage_used', $totalUploadSize);
+        }
+
+        $message = $uploadedCount > 1
+            ? sprintf('%d ảnh đã được tải lên thành công.', $uploadedCount)
+            : 'Ảnh đã được tải lên thành công.';
+
+        return back()->with('success', $message);
     }
 
     public function destroy(Request $request, string $id): RedirectResponse
